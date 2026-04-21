@@ -1,0 +1,29 @@
+set timeout 4
+set plugin [lindex $argv 0]
+set helper_dir [lindex $argv 1]
+set marker [lindex $argv 2]
+
+spawn env PATH=${helper_dir}:$env(PATH) zsh -f
+after 500
+send -- "PROMPT='PROMPT> '\r"
+expect {
+  "PROMPT> " {}
+  timeout { exit 11 }
+}
+send -- "source ${plugin}\r"
+expect {
+  "PROMPT> " {}
+  timeout { exit 12 }
+}
+send -- "python3 -c 'import pathlib,sys; pathlib.Path(\"${marker}\").write_text(\"ok\"); print(hex(48879)); print(hex(65261), file=sys.stderr)'\r"
+expect {
+  "PROMPT> " {}
+  timeout { exit 13 }
+}
+send -- "test -f ${marker} && print MARKER_OK || print MARKER_MISSING\r"
+expect {
+  "MARKER_OK" {}
+  timeout { exit 14 }
+}
+send -- "exit\r"
+expect eof

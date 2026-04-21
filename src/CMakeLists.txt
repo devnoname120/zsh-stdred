@@ -3,6 +3,7 @@ project(stdred LANGUAGES C)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 find_library(UTIL_LIBRARY util)
+find_program(EXPECT_EXECUTABLE expect)
 
 add_executable(emit_fixture "${PROJECT_SOURCE_DIR}/../tests/fixtures/emit.c")
 add_executable(stdred stdred.c)
@@ -34,3 +35,15 @@ add_test(
     "$<TARGET_FILE:stdred>"
     "$<TARGET_FILE:emit_fixture>"
 )
+
+if (EXPECT_EXECUTABLE)
+  add_test(
+    NAME interactive-tests
+    COMMAND
+      ${EXPECT_EXECUTABLE}
+      "${PROJECT_SOURCE_DIR}/../tests/interactive.expect"
+      "${PROJECT_SOURCE_DIR}/../stdred.plugin.zsh"
+      "${CMAKE_BINARY_DIR}"
+      "${CMAKE_BINARY_DIR}/interactive-marker.txt"
+  )
+endif()

@@ -112,6 +112,24 @@ static int install_handler(int sig) {
   return sigaction(sig, &action, NULL);
 }
 
+static int set_foreground_pgrp(int tty_fd, pid_t pgid) {
+  struct sigaction ignore_action;
+  struct sigaction previous_action;
+
+  memset(&ignore_action, 0, sizeof(ignore_action));
+  ignore_action.sa_handler = SIG_IGN;
+  sigemptyset(&ignore_action.sa_mask);
+
+  if (sigaction(SIGTTOU, &ignore_action, &previous_action) == -1) return -1;
+
+  int result = tcsetpgrp(tty_fd, pgid);
+  int saved_errno = errno;
+
+  sigaction(SIGTTOU, &previous_action, NULL);
+  errno = saved_errno;
+  return result;
+}
+
 static int child_exit_code(int status) {
   if (WIFEXITED(status)) return WEXITSTATUS(status);
   if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
@@ -167,9 +185,16 @@ int main(int argc, char **argv) {
   int master_fd = -1;
   int slave_fd = -1;
   char zdotdir_template[PATH_MAX] = "";
+  int tty_fd = isatty(STDIN_FILENO) ? STDIN_FILENO : -1;
+  pid_t original_tty_pgid = -1;
   if (openpty(&master_fd, &slave_fd, NULL, NULL, NULL) == -1) {
     perror("openpty");
     return 1;
+  }
+
+  if (tty_fd >= 0) {
+    original_tty_pgid = tcgetpgrp(tty_fd);
+    if (original_tty_pgid == -1 && errno == ENOTTY) tty_fd = -1;
   }
 
   struct termios raw;
@@ -222,6 +247,11 @@ int main(int argc, char **argv) {
   child_pgid = child;
   setpgid(child, child);
 
+  if (tty_fd >= 0 && set_foreground_pgrp(tty_fd, child) == -1) {
+    perror("tcsetpgrp");
+    return 1;
+  }
+
   close(slave_fd);
 
   char buffer[4096];
@@ -256,6 +286,11 @@ int main(int argc, char **argv) {
       continue;
     }
     perror("waitpid");
+    return 1;
+  }
+
+  if (tty_fd >= 0 && original_tty_pgid > 0 && set_foreground_pgrp(tty_fd, original_tty_pgid) == -1) {
+    perror("tcsetpgrp");
     return 1;
   }
 
